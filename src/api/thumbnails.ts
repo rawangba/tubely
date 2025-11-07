@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileTypeToExt } from "./assets";
 import { getBearerToken, validateJWT } from "../auth";
 import { respondWithJSON } from "./json";
 import { getVideo, updateVideo } from "../db/videos";
@@ -10,7 +12,7 @@ type Thumbnail = {
   mediaType: string;
 };
 
-const videoThumbnails: Map<string, Thumbnail> = new Map();
+//const videoThumbnails: Map<string, Thumbnail> = new Map();
 
 export async function handlerGetThumbnail(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -47,32 +49,58 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 
   console.log("uploading thumbnail for video", videoId, "by user", userID);
 
+  // Parse form data and get thumbnail from the form
   const formData = await req.formData();
   const file = formData.get("thumbnail");
   if (!(file instanceof File)) {
     throw new BadRequestError("Thumbnail file missing");
   }
 
+  // Check file size of thumbnail
   const MAX_UPLOAD_SIZE = 10 << 20;
   if (file.size > MAX_UPLOAD_SIZE) {
     throw new BadRequestError("File too large, max size is 10MB");
   }
 
+  // Get media type of thumbnail
   const fileType = file.type;
+  if (fileType !== "image/jpeg") {
+    if (fileType !== "image/png") {
+      throw new BadRequestError("Thumbnail must be JPEG or PNG");
+    }
+  }
 
+  // Read image data into a const
   const imageData = await file.arrayBuffer();
+  //const encodedImage = Buffer.from(imageData).toString("base64"); // Encodes image data in a base64 string
 
+  // Get video metadata from SQLite database
   const videoMetadata = await getVideo(cfg.db, videoId);
   
+  // Check if provided userID matches userID of the video in the DB
   if (!videoMetadata || userID !== videoMetadata.userID) {
     throw new UserForbiddenError(`Video owner ${userID} does not match`);
   }
 
-  videoThumbnails.set(videoMetadata.id, {data: imageData, mediaType: fileType});
+  // Save thumbnail to the global map (videoThumbnails, in this file)
+  //videoThumbnails.set(videoMetadata.id, {data: imageData, mediaType: fileType});
 
-  const thumbnailURL = `http://localhost:${cfg.port}/api/thumbnails/${videoId}`;
-  videoMetadata.thumbnailURL = thumbnailURL;
+  // Generate thumbnail file path
+  const filename = `${videoId}${fileTypeToExt(fileType)}`;
+  const thumbnailFilepath = path.join(cfg.assetsRoot, filename);
+
+  // Generate thumbnail URL
+  //const thumbnailURL = `http://localhost:${cfg.port}/api/thumbnails/${videoId}`;
+  //const thumbnailURL = `data:${fileType};base64,${encodedImage}`; // Creates a data URL
+  const thumbnailURL = `http://localhost:${cfg.port}/${thumbnailFilepath}`
+
+  // Save the thumbnail file to the server file system
+  await Bun.write(thumbnailFilepath, imageData);
+
+  // Update video metadata in the DB to use the thumbnail URL
+  videoMetadata.thumbnailURL = thumbnailURL;  
   updateVideo(cfg.db, videoMetadata);
 
+  // Respond with updated JSON of video's metadata 
   return respondWithJSON(200, videoMetadata);
 }
