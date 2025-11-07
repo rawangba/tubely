@@ -46,7 +46,7 @@ export function getVideos(db: Database, userID: string): Video[] {
   `;
 
   const rows = db.query<VideoRow, [string]>(sql).all(userID);
-
+  
   const videos: Video[] = rows.map((row) => ({
     id: row.id,
     createdAt: new Date(row.created_at),
@@ -57,7 +57,7 @@ export function getVideos(db: Database, userID: string): Video[] {
     videoURL: row.video_url,
     userID: row.user_id,
   }));
-
+  
   return videos;
 }
 
