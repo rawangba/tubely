@@ -1,4 +1,5 @@
 import path from 'node:path';
+import randomBytes from 'node:crypto';
 import { fileTypeToExt } from "./assets";
 import { getBearerToken, validateJWT } from "../auth";
 import { respondWithJSON } from "./json";
@@ -86,7 +87,10 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   //videoThumbnails.set(videoMetadata.id, {data: imageData, mediaType: fileType});
 
   // Generate thumbnail file path
-  const filename = `${videoId}${fileTypeToExt(fileType)}`;
+  //const filename = `${videoId}${fileTypeToExt(fileType)}`;
+  const { randomBytes } = await import('node:crypto');
+  const buf = randomBytes(32);
+  const filename = `${buf.toString('base64url')}${fileTypeToExt(fileType)}`;
   const thumbnailFilepath = path.join(cfg.assetsRoot, filename);
 
   // Generate thumbnail URL

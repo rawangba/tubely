@@ -246,6 +246,7 @@ async function getVideo(videoID) {
     }
 
     const video = await res.json();
+    console.log(`got video ${videoID}`);
     viewVideo(video);
   } catch (error) {
     alert(`Error: ${error.message}`);
@@ -265,7 +266,14 @@ function viewVideo(video) {
   if (!video.thumbnailURL) {
     thumbnailImg.style.display = "none";
   } else {
+    console.log(`found video thumbnail URL ${video.thumbnailURL}`);
+    thumbnailImg.removeAttribute("src");
+    thumbnailImg.loading = "eager";
+    requestAnimationFrame(() => {
+      thumbnailImg.src = video.thumbnailURL;
+    });
     thumbnailImg.style.display = "block";
+    //thumbnailImg.src = `${video.thumbnailURL}?v=${Date.now()}`; // cache-busting version
     thumbnailImg.src = video.thumbnailURL;
   }
 
