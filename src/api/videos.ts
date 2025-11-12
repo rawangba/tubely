@@ -59,11 +59,14 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   // Write video to temporary file 
   await Bun.write(tempFile, file);
 
+  // Get the aspect ratio of the video
+  const aspectRatio = await getVideoAspectRatio(tempFileName);
+
   // Generate S3 file key
   //const { randomBytes } = await import('node:crypto');
   //const buf = randomBytes(32);
   //const fileKey = `${buf.toString('base64url')}${fileTypeToExt(fileType)}`;
-  const fileKey = `${videoId}${fileTypeToExt(fileType)}`;
+  const fileKey = `${aspectRatio}/${videoId}${fileTypeToExt(fileType)}`;
   console.log(`S3 File Key is ${fileKey}`);
 
   // Write to S3
@@ -84,22 +87,35 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   return respondWithJSON(200, videoMetadata);
 }
 
-function getVideoAspectRatio(filePath: string): string {
-  const proc = Bun.spawn(["ffprobe", "-v", "error" "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", filePath], {
+async function getVideoAspectRatio(filePath: string): string {
+  const proc = Bun.spawn(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", filePath], {
     stderr: "pipe",
   });
-  await proc.exited;
-  if (proc.exitCode !== 0) {
-    console.error("Bad exit");
-  }
-
+  
   const errors: string = await proc.stderr.text();
   if (errors) {
     console.error(errors);
   }
+  await proc.exited;
+  if (proc.exitCode !== 0) {
+    throw new Error(`ffprobe error: ${errors}`);
+  }
+  
   const text = await proc.stdout.text();
-  console.log(text);
+  const output = JSON.parse(text);
+  if (!output.streams || output.streams.length === 0) {
+    throw new Error("No video streams found");
+  }
 
+  const width = output.streams[0].width;
+  const height = output.streams[0].height;
+
+  if (width / height > 1.75 && width / height < 1.8) {
+    return "landscape";
+  }
+  else if (width / height > .55 && width / height < .57) {
+    return "portrait";
+  }
   return "other";
 }
 
