@@ -59,8 +59,11 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   // Write video to temporary file 
   await Bun.write(tempFile, file);
 
+  // Process temporary file so that it has "fast start" encoding
+  const processedFilePath = await processVideoForFastStart(tempFileName);
+
   // Get the aspect ratio of the video
-  const aspectRatio = await getVideoAspectRatio(tempFileName);
+  const aspectRatio = await getVideoAspectRatio(processedFilePath);
 
   // Generate S3 file key
   //const { randomBytes } = await import('node:crypto');
@@ -70,7 +73,7 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   console.log(`S3 File Key is ${fileKey}`);
 
   // Write to S3
-  await uploadVideoToS3(cfg, fileKey, tempFileName, fileType);
+  await uploadVideoToS3(cfg, fileKey, processedFilePath, fileType);
 
   // Generate S3 URL
   const videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${fileKey}`
@@ -82,6 +85,7 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 
   // Delete temporary file
   await Promise.all([rm(tempFileName, { force: true })]);
+  await Promise.all([rm(processedFilePath, { force: true })]);
 
   // Respond with updated JSON of video's metadata 
   return respondWithJSON(200, videoMetadata);
@@ -117,5 +121,24 @@ async function getVideoAspectRatio(filePath: string): string {
     return "portrait";
   }
   return "other";
+}
+
+export async function processVideoForFastStart(inputFilePath: string): string {
+  const newFilePath = `${inputFilePath}.processed`;
+  const proc = Bun.spawn(["ffmpeg", "-i", inputFilePath, "-movflags", "faststart", "-map_metadata", "0", "-codec", "copy", "-f", "mp4", newFilePath], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const errors: string = await proc.stderr.text();
+  if (errors) {
+    console.error(errors);
+  }
+  await proc.exited;
+  if (proc.exitCode !== 0) {
+    throw new Error(`ffmpeg error: ${errors}`);
+  }
+
+  return newFilePath;
 }
 
