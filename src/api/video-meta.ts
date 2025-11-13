@@ -57,9 +57,9 @@ export async function handlerVideoGet(cfg: ApiConfig, req: BunRequest) {
   }
 
   // Get a Video object with a presigned URL
-  const tempVideo = await dbVideoToSignedVideo(cfg, video);
+  //const tempVideo = await dbVideoToSignedVideo(cfg, video);
 
-  return respondWithJSON(200, tempVideo);
+  return respondWithJSON(200, video);
 }
 
 export async function handlerVideosRetrieve(cfg: ApiConfig, req: Request) {
@@ -67,9 +67,9 @@ export async function handlerVideosRetrieve(cfg: ApiConfig, req: Request) {
   const userID = validateJWT(token, cfg.jwtSecret);
 
   const videos = getVideos(cfg.db, userID);
-  const resolvedTempVideos = await Promise.all(
-    videos.map((video) => dbVideoToSignedVideo(cfg, video)),
-  );
+  //const resolvedTempVideos = await Promise.all(
+  //  videos.map((video) => dbVideoToSignedVideo(cfg, video)),
+  //);
 
-  return respondWithJSON(200, resolvedTempVideos);
+  return respondWithJSON(200, videos);
 }

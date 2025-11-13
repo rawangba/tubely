@@ -80,18 +80,21 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   await uploadVideoToS3(cfg, fileKey, processedFilePath, fileType);
 
   // Generate S3 URL
-  const videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${fileKey}`
+  //const videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${fileKey}`
+  const videoURL = `https://${cfg.s3CfDistribution}/${fileKey}`
   console.log(`Video uploaded to ${videoURL}`);
 
   // Generate a presigned URL to access S3
-  const signedVideo = await dbVideoToSignedVideo(cfg, videoMetadata);
-  console.log(`Presigned URL is ${signedVideo.videoURL}`);
+  //const signedVideo = await dbVideoToSignedVideo(cfg, videoMetadata);
+  //console.log(`Presigned URL is ${signedVideo.videoURL}`);
 
   // Update video metadata in the DB to use the video URL
-  //videoMetadata.videoURL = videoURL;
+  videoMetadata.videoURL = videoURL;
   
   // Update video metadata in the DB so that video_url stores the S3 key
-  videoMetadata.videoURL = fileKey;
+  //videoMetadata.videoURL = fileKey;
+  
+  // Save updated video metadata to the DB
   updateVideo(cfg.db, videoMetadata);
 
   // Delete temporary file
@@ -99,7 +102,8 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   await Promise.all([rm(processedFilePath, { force: true })]);
 
   // Respond with updated JSON of video's metadata 
-  return respondWithJSON(200, signedVideo);
+  //return respondWithJSON(200, signedVideo);
+  return respondWithJSON(200, videoMetadata);
 }
 
 async function getVideoAspectRatio(filePath: string): string {
@@ -151,21 +155,5 @@ export async function processVideoForFastStart(inputFilePath: string): string {
   }
 
   return newFilePath;
-}
-
-export function generatePresignedURL(cfg: ApiConfig, key: string, expireTime: number): string {
-  const presignedURL = cfg.s3Client.presign(key, {
-    expiresIn: expireTime,
-    method: "PUT",
-    type: "video/mp4"
-  });
-  return presignedURL;
-}
-
-export function dbVideoToSignedVideo(cfg: ApiConfig, video: Video): Video {
-  const currentKey = video.videoURL;
-  const presignedURL = generatePresignedURL(cfg, currentKey, 3600);
-  video.videoURL = presignedURL;
-  return video;
 }
 
