@@ -9,6 +9,7 @@ import { fileTypeToExt } from "./assets";
 import { getBearerToken, validateJWT } from "../auth";
 import { getVideo, updateVideo } from "../db/videos";
 import { uploadVideoToS3 } from "../s3";
+import { dbVideoToSignedVideo } from "../videoURL";
 
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
 
@@ -25,7 +26,7 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 
   // Get video metadata from SQLite database
   const videoMetadata = await getVideo(cfg.db, videoId);
-  
+
   // Check if provided userID matches userID of the video in the DB
   if (!videoMetadata || userID !== videoMetadata.userID) {
     throw new UserForbiddenError(`Video owner ${userID} does not match`);
@@ -72,6 +73,9 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   const fileKey = `${aspectRatio}/${videoId}${fileTypeToExt(fileType)}`;
   console.log(`S3 File Key is ${fileKey}`);
 
+  // Store S3 key in the DB
+  videoMetadata.videoURL = fileKey;
+
   // Write to S3
   await uploadVideoToS3(cfg, fileKey, processedFilePath, fileType);
 
@@ -79,8 +83,15 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   const videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${fileKey}`
   console.log(`Video uploaded to ${videoURL}`);
 
+  // Generate a presigned URL to access S3
+  const signedVideo = await dbVideoToSignedVideo(cfg, videoMetadata);
+  console.log(`Presigned URL is ${signedVideo.videoURL}`);
+
   // Update video metadata in the DB to use the video URL
-  videoMetadata.videoURL = videoURL;
+  //videoMetadata.videoURL = videoURL;
+  
+  // Update video metadata in the DB so that video_url stores the S3 key
+  videoMetadata.videoURL = fileKey;
   updateVideo(cfg.db, videoMetadata);
 
   // Delete temporary file
@@ -88,7 +99,7 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   await Promise.all([rm(processedFilePath, { force: true })]);
 
   // Respond with updated JSON of video's metadata 
-  return respondWithJSON(200, videoMetadata);
+  return respondWithJSON(200, signedVideo);
 }
 
 async function getVideoAspectRatio(filePath: string): string {
@@ -140,5 +151,21 @@ export async function processVideoForFastStart(inputFilePath: string): string {
   }
 
   return newFilePath;
+}
+
+export function generatePresignedURL(cfg: ApiConfig, key: string, expireTime: number): string {
+  const presignedURL = cfg.s3Client.presign(key, {
+    expiresIn: expireTime,
+    method: "PUT",
+    type: "video/mp4"
+  });
+  return presignedURL;
+}
+
+export function dbVideoToSignedVideo(cfg: ApiConfig, video: Video): Video {
+  const currentKey = video.videoURL;
+  const presignedURL = generatePresignedURL(cfg, currentKey, 3600);
+  video.videoURL = presignedURL;
+  return video;
 }
 
